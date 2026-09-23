@@ -1,0 +1,2480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HAR Analyzer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #232738;
+      --border:    #2e3347;
+      --accent:    #6c8fff;
+      --accent2:   #a78bfa;
+      --green:     #34d399;
+      --yellow:    #fbbf24;
+      --red:       #f87171;
+      --orange:    #fb923c;
+      --text:      #e2e8f0;
+      --muted:     #8892a4;
+      --radius:    10px;
+      --shadow:    0 4px 24px rgba(0,0,0,.45);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 14px; }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+    a { color: var(--accent); }
+    button { cursor: pointer; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
+    header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.3px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    header .badge { font-size: .7rem; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); padding: 2px 8px; border-radius: 20px; }
+    .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+    .btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; font-size: .8rem; font-weight: 500; transition: background .15s, border-color .15s; }
+    .btn:hover { background: var(--border); border-color: var(--accent); }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #5a7aef; border-color: #5a7aef; }
+    #drop-zone { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 60px 24px; transition: background .2s; }
+    #drop-zone.hidden { display: none; }
+    #drop-zone.dragover { background: rgba(108,143,255,.07); }
+    .drop-icon { width: 80px; height: 80px; border-radius: 20px; background: linear-gradient(135deg, rgba(108,143,255,.2), rgba(167,139,250,.2)); border: 2px dashed var(--accent); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; }
+    .drop-title { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+    .drop-sub { color: var(--muted); font-size: .9rem; text-align: center; max-width: 420px; }
+    #file-input { display: none; }
+    .drop-features { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+    .drop-feature { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .drop-feature span { color: var(--accent); }
+    #app { display: none; flex-direction: row; height: 100vh; width: 100vw; overflow: hidden; }
+    #app.visible { display: flex; }
+    #sidebar {
+      width: 290px; min-width: 290px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      height: 100vh; max-height: 100vh;
+      overflow-y: auto; overflow-x: hidden;
+      padding: 0 16px 20px 16px;
+      display: flex; flex-direction: column; gap: 18px;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      padding: 15px 0 12px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      z-index: 10;
+    }
+    .sidebar-header h1 {
+      font-size: 1.15rem; font-weight: 700; letter-spacing: -.3px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    #app-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      min-width: 0;
+    }
+    #app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    #summary-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; gap: 0; flex-wrap: wrap; flex-shrink: 0; }
+    .stat-item { display: flex; flex-direction: column; gap: 2px; padding: 0 20px 0 0; margin-right: 20px; border-right: 1px solid var(--border); }
+    .stat-item:last-child { border-right: none; }
+    .stat-label { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+    .stat-value { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .stat-value.ok { color: var(--green); }
+    .stat-value.warn { color: var(--yellow); }
+    .stat-value.err { color: var(--red); }
+    .filter-section { display: flex; flex-direction: column; gap: 8px; }
+    .filter-header-row { display: flex; justify-content: space-between; align-items: center; }
+    .filter-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+    .filter-action-btn { background: none; border: none; color: var(--muted); font-size: .7rem; cursor: pointer; padding: 0; }
+    .filter-action-btn:hover { color: var(--accent); }
+    .search-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: .85rem; width: 100%; outline: none; transition: border-color .15s; }
+    .search-box:focus { border-color: var(--accent); }
+    .search-box::placeholder { color: var(--muted); }
+
+    /* Domain List Styling */
+    .domain-list { display: flex; flex-direction: column; gap: 4px; max-height: 155px; overflow-y: auto; padding-right: 2px; }
+    .domain-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .73rem; color: var(--muted); cursor: pointer; user-select: none; transition: all .15s; }
+    .domain-item:hover { border-color: var(--accent); color: var(--text); }
+    .domain-item.active { background: rgba(108,143,255,.18); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .domain-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: .72rem; }
+    .domain-count { font-size: .67rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1px 6px; color: var(--muted); flex-shrink: 0; }
+    .domain-item.active .domain-count { border-color: var(--accent); color: var(--accent); background: rgba(15,17,23,.6); }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip { border: 1px solid var(--border); background: var(--surface2); border-radius: 20px; padding: 3px 10px; font-size: .75rem; font-weight: 500; color: var(--muted); cursor: pointer; user-select: none; transition: all .15s; }
+    .chip:hover { border-color: var(--accent); color: var(--text); }
+    .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .chip.s2xx.active { background: var(--green); border-color: var(--green); }
+    .chip.s3xx.active { background: var(--yellow); border-color: var(--yellow); color: #000; }
+    .chip.s4xx.active { background: var(--orange); border-color: var(--orange); }
+    .chip.s5xx.active { background: var(--red); border-color: var(--red); }
+    .chip.s0xx.active { background: var(--muted); border-color: var(--muted); }
+    .range-row { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); }
+    .range-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: .8rem; width: 95px; outline: none; }
+    .range-input:focus { border-color: var(--accent); }
+    .btn-reset { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 7px 12px; font-size: .78rem; width: 100%; margin-top: 4px; transition: all .15s; }
+    .btn-reset:hover { border-color: var(--red); color: var(--red); }
+    #main-panel { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+    #tab-bar { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; padding: 0 20px; gap: 4px; position: sticky; top: 0; z-index: 10; }
+    .tab { padding: 12px 16px; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color .15s, border-color .15s; white-space: nowrap; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; padding: 20px; flex: 1; }
+    .tab-panel.active { display: block; }
+    #charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+    .chart-card.full-width { grid-column: 1 / -1; }
+    .chart-title { font-size: .82rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .chart-wrap { position: relative; }
+    .chart-wrap canvas { max-height: 280px; }
+    .chart-wrap.tall canvas { max-height: 340px; }
+    .chart-wrap.doughnut canvas { max-height: 220px; }
+    #table-panel { padding: 0; }
+    #table-toolbar { padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 44px; z-index: 9; }
+    #table-toolbar .result-count { font-size: .82rem; color: var(--muted); margin-left: auto; }
+    #table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; table-layout: fixed; }
+    thead { background: var(--surface); position: sticky; top: 0; z-index: 8; }
+    th {
+      padding: 10px 14px; text-align: left; font-weight: 700; color: var(--muted);
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .5px;
+      border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer;
+      user-select: none; position: relative; overflow: hidden; text-overflow: ellipsis;
+    }
+    th:hover { color: var(--text); }
+    th .sort-icon { margin-left: 4px; opacity: .4; }
+    th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+    th .col-resizer {
+      position: absolute; right: 0; top: 0; bottom: 0; width: 7px;
+      cursor: col-resize; user-select: none; z-index: 10;
+    }
+    th .col-resizer:hover, th .col-resizer.resizing {
+      background: var(--accent);
+    }
+    body.col-resizing, body.col-resizing * {
+      cursor: col-resize !important; user-select: none !important;
+    }
+    td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody tr { cursor: pointer; transition: background .12s, box-shadow .12s; }
+    tbody tr:hover td { background: var(--surface2); }
+    tbody tr:focus,
+    tbody tr.focused-row {
+      outline: none;
+      background: rgba(108,143,255,.16) !important;
+      box-shadow: inset 4px 0 0 var(--accent);
+    }
+    tbody tr:focus td,
+    tbody tr.focused-row td { background: transparent !important; }
+    tbody tr.selected-row {
+      background: rgba(108,143,255,.26) !important;
+      box-shadow: inset 4px 0 0 var(--accent);
+    }
+    tbody tr.selected-row td { background: transparent !important; }
+
+    /* Column Picker Dropdown */
+    .col-picker-wrap { position: relative; display: inline-block; }
+    .btn-sm { padding: 4px 10px; font-size: .75rem; border-radius: 5px; display: inline-flex; align-items: center; gap: 5px; }
+    .col-picker-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0;
+      background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+      border-radius: 8px; padding: 10px 14px; z-index: 100; min-width: 175px;
+      display: flex; flex-direction: column; gap: 7px;
+    }
+    .col-picker-title { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+    .col-checkbox-label { display: flex; align-items: center; gap: 8px; font-size: .76rem; color: var(--text); cursor: pointer; user-select: none; }
+    .col-checkbox-label input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+    .col-picker-actions { display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px; }
+
+    .domain-cell { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .host-pill { color: var(--muted); font-size: .72rem; display: inline-block; cursor: pointer; transition: all .15s; background: var(--surface2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 4px; font-family: monospace; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+    .host-pill:hover { color: var(--accent); border-color: var(--accent); background: rgba(108,143,255,.12); }
+    .path-cell { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); font-family: 'Fira Code', 'JetBrains Mono', monospace; font-size: .75rem; cursor: pointer; }
+    .method-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: .7rem; font-weight: 700; font-family: monospace; }
+    .m-GET    { background: rgba(52,211,153,.15); color: var(--green); }
+    .m-POST   { background: rgba(251,191,36,.15);  color: var(--yellow); }
+    .m-PUT    { background: rgba(251,146,60,.15);  color: var(--orange); }
+    .m-DELETE { background: rgba(248,113,113,.15); color: var(--red); }
+    .m-OPTIONS{ background: rgba(139,92,246,.15);  color: var(--accent2); }
+    .m-PATCH  { background: rgba(6,182,212,.15);   color: #22d3ee; }
+    .status-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: .72rem; font-weight: 700; }
+    .s-2 { background: rgba(52,211,153,.15); color: var(--green); }
+    .s-3 { background: rgba(251,191,36,.15);  color: var(--yellow); }
+    .s-4 { background: rgba(251,146,60,.15);  color: var(--orange); }
+    .s-5 { background: rgba(248,113,113,.15); color: var(--red); }
+    .s-0 { background: rgba(137,146,164,.15); color: var(--muted); }
+    .type-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: .7rem; font-weight: 500; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .waterfall { min-width: 100px; height: 12px; background: var(--surface2); border-radius: 3px; overflow: hidden; display: flex; position: relative; }
+    .wf-seg { height: 100%; }
+    .wf-blocked { background: #64748b; }
+    .wf-dns     { background: #a78bfa; }
+    .wf-ssl     { background: #38bdf8; }
+    .wf-connect { background: #0ea5e9; }
+    .wf-send    { background: #34d399; }
+    .wf-wait    { background: #fbbf24; }
+    .wf-receive { background: #f87171; }
+    .duration-val { font-family: monospace; font-size: .8rem; }
+    .duration-val.slow { color: var(--red); }
+    .duration-val.med  { color: var(--yellow); }
+    .duration-val.fast { color: var(--green); }
+    #detail-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 480px; background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow); z-index: 200; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .25s ease; }
+    #detail-drawer.open { transform: translateX(0); }
+    #detail-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    #detail-header h2 { font-size: .9rem; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #detail-close { background: none; border: none; color: var(--muted); font-size: 1.2rem; padding: 4px; }
+    #detail-close:hover { color: var(--text); }
+    #detail-body { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 18px; }
+    .detail-section-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+    .detail-kv { display: grid; grid-template-columns: 140px 1fr; gap: 0; }
+    .detail-kv .dk { padding: 5px 8px 5px 0; font-size: .78rem; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); word-break: break-all; }
+    .detail-kv .dv { padding: 5px 0; font-size: .78rem; color: var(--text); border-bottom: 1px solid var(--border); word-break: break-all; font-family: monospace; }
+    .headers-list { font-size: .75rem; display: flex; flex-direction: column; gap: 3px; }
+    .header-row { display: grid; grid-template-columns: 160px 1fr; gap: 4px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .header-row .hk { color: var(--muted); font-weight: 600; }
+    .header-row .hv { color: var(--text); font-family: monospace; word-break: break-all; }
+    .timing-breakdown { display: flex; flex-direction: column; gap: 5px; }
+    .timing-row { display: flex; align-items: center; gap: 8px; font-size: .78rem; }
+    .timing-label { width: 70px; color: var(--muted); font-weight: 600; }
+    .timing-bar-wrap { flex: 1; background: var(--surface2); border-radius: 3px; height: 8px; overflow: hidden; }
+    .timing-bar { height: 100%; border-radius: 3px; }
+    .timing-ms { width: 70px; text-align: right; font-family: monospace; color: var(--text); }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 12px; color: var(--muted); }
+    .empty-state .icon { font-size: 2.5rem; }
+    .empty-state p { font-size: .9rem; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    @media (max-width: 900px) {
+      #charts-grid { grid-template-columns: 1fr; }
+      .chart-card.full-width { grid-column: 1; }
+      #sidebar { width: 250px; min-width: 250px; }
+      #detail-drawer { width: 100%; }
+    }
+    @media (max-width: 640px) {
+      #app { flex-direction: column; height: 100vh; }
+      #sidebar { width: 100%; min-width: unset; height: auto; max-height: 260px; border-right: none; border-bottom: 1px solid var(--border); }
+      #app-main { height: auto; flex: 1; }
+    }
+
+    /* Timeline & Unit Time Controls */
+    .timeline-ctrl-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      margin-bottom: 18px;
+    }
+    .timeline-ctrl-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .timeline-ctrl-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-left: auto;
+    }
+    .ctrl-label {
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .unit-pill-group {
+      display: inline-flex;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .unit-pill {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .unit-pill:hover {
+      color: var(--text);
+    }
+    .unit-pill.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+    .timeline-stat-tag {
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .timeline-stat-tag strong {
+      color: var(--text);
+      font-family: monospace;
+    }
+
+    /* Domain Rate Tab Styles */
+    .domain-rates-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow-x: auto;
+      margin-top: 14px;
+    }
+    .domain-rates-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .8rem;
+    }
+    .domain-rates-table th {
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 700;
+      color: var(--muted);
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      white-space: nowrap;
+    }
+    .domain-rates-table td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .domain-rates-table tr:hover td {
+      background: rgba(108,143,255,.08);
+    }
+    .rate-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: .78rem;
+      font-weight: 700;
+      background: rgba(108,143,255,.15);
+      color: var(--accent);
+    }
+    .rate-badge.high {
+      background: rgba(248,113,113,.15);
+      color: var(--red);
+    }
+    .rate-badge.med {
+      background: rgba(251,191,36,.15);
+      color: var(--yellow);
+    }
+    .rate-badge.low {
+      background: rgba(52,211,153,.15);
+      color: var(--green);
+    }
+
+    /* Modal Backdrop & Dialog */
+    .modal-backdrop {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(4px);
+      z-index: 300;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 660px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: modalFadeIn .15s ease-out;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(.97); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .modal-close { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; }
+    .modal-close:hover { color: var(--text); }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .modal-section-title {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .preset-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .preset-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: .75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .preset-btn.active { background: rgba(108,143,255,.18); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .export-options-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .option-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .radio-group { display: flex; gap: 14px; }
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .78rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .radio-label input { accent-color: var(--accent); cursor: pointer; }
+    .fields-group {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .fields-category-title {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .fields-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px 12px;
+    }
+    @media (max-width: 600px) {
+      .fields-grid { grid-template-columns: 1fr 1fr; }
+      .export-options-grid { grid-template-columns: 1fr; }
+    }
+    .field-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .74rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+    .field-checkbox-label input { accent-color: var(--accent); cursor: pointer; }
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      background: var(--surface);
+    }
+    .copy-success {
+      font-size: .78rem;
+      color: var(--green);
+      font-weight: 600;
+      margin-right: auto;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<header id="landing-header">
+  <h1>⚡ HAR Analyzer</h1>
+  <div class="header-right">
+    <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Open HAR File</button>
+  </div>
+</header>
+
+<input type="file" id="file-input" accept=".har,application/json" />
+
+<div id="drop-zone">
+  <div class="drop-icon">📡</div>
+  <div class="drop-title">Drop a HAR file here</div>
+  <div class="drop-sub">Analyze HTTP Archive files from Chrome DevTools, Firefox, Charles Proxy, Fiddler, and more.</div>
+  <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Browse File</button>
+  <div class="drop-features">
+    <div class="drop-feature"><span>🌐</span> Domain Filtering</div>
+    <div class="drop-feature"><span>🔍</span> Smart Filters</div>
+    <div class="drop-feature"><span>📊</span> 7 Interactive Charts</div>
+    <div class="drop-feature"><span>⚡</span> Timing Breakdown</div>
+    <div class="drop-feature"><span>🔒</span> Runs Locally</div>
+  </div>
+</div>
+
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h1>⚡ HAR Analyzer</h1>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-label">Search URL</div>
+      <input class="search-box" type="text" id="filter-search" placeholder="Filter by URL…" />
+    </div>
+
+      <div class="filter-section">
+        <div class="filter-header-row">
+          <div class="filter-label">Domain</div>
+          <button class="filter-action-btn" onclick="clearDomainFilters(event)">Clear</button>
+        </div>
+        <input class="search-box" type="text" id="filter-domain-search" placeholder="Filter domains…" style="font-size:.78rem;padding:5px 8px;margin-bottom:2px;" />
+        <div class="domain-list" id="chips-domain"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">Method</div>
+        <div class="chips" id="chips-method"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">Resource Type</div>
+        <div class="chips" id="chips-type"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">Status Code</div>
+        <div class="chips" id="chips-status"></div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">Duration (ms)</div>
+        <div class="range-row">
+          <input class="range-input" type="number" id="filter-dur-min" placeholder="Min" min="0" />
+          <span>–</span>
+          <input class="range-input" type="number" id="filter-dur-max" placeholder="Max" min="0" />
+        </div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-label">Transfer Size</div>
+        <div class="range-row">
+          <input class="range-input" type="number" id="filter-size-min" placeholder="Min KB" min="0" />
+          <span>–</span>
+          <input class="range-input" type="number" id="filter-size-max" placeholder="Max KB" min="0" />
+        </div>
+      </div>
+
+      <button class="btn-reset" onclick="resetFilters()">↺ Reset Filters</button>
+    </aside>
+
+    <div id="app-main">
+      <header id="app-header">
+        <span class="badge" id="file-badge"></span>
+        <div class="header-right">
+          <button class="btn" id="load-another-btn" onclick="resetApp()">Load Another HAR</button>
+          <button class="btn" id="header-export-btn" onclick="openExportModal()">📥 Export</button>
+        </div>
+      </header>
+
+      <div id="summary-bar">
+        <div class="stat-item"><span class="stat-label">Total Requests</span><span class="stat-value" id="stat-total">—</span></div>
+        <div class="stat-item"><span class="stat-label">Shown</span><span class="stat-value" id="stat-shown">—</span></div>
+        <div class="stat-item"><span class="stat-label">Recording Duration</span><span class="stat-value" id="stat-recording-time" title="">—</span></div>
+        <div class="stat-item"><span class="stat-label">Avg Duration</span><span class="stat-value" id="stat-avg">—</span></div>
+        <div class="stat-item"><span class="stat-label">Total Transfer</span><span class="stat-value" id="stat-size">—</span></div>
+        <div class="stat-item"><span class="stat-label">Errors (4xx+5xx)</span><span class="stat-value" id="stat-errors">—</span></div>
+        <div class="stat-item"><span class="stat-label">Slowest</span><span class="stat-value" id="stat-slowest">—</span></div>
+      </div>
+
+      <div id="main-panel">
+        <div id="tab-bar">
+          <div class="tab active" data-tab="charts">📊 Overview Charts</div>
+          <div class="tab" data-tab="timeline">⏱ Timeline &amp; Rate</div>
+          <div class="tab" data-tab="domain-rates">🌐 Domain Rates</div>
+          <div class="tab" data-tab="table">📋 Requests</div>
+        </div>
+
+      <div class="tab-panel active" id="tab-charts">
+        <div id="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title">Status Code Distribution</div>
+            <div class="chart-wrap doughnut"><canvas id="chart-status"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Resource Type Breakdown</div>
+            <div class="chart-wrap"><canvas id="chart-type"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Requests by Domain</div>
+            <div class="chart-wrap"><canvas id="chart-domain"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Top 15 Slowest Requests</div>
+            <div class="chart-wrap"><canvas id="chart-slowest"></canvas></div>
+          </div>
+          <div class="chart-card full-width">
+            <div class="chart-title">Timing Breakdown (Top 15 by Duration)</div>
+            <div class="chart-wrap tall"><canvas id="chart-timing"></canvas></div>
+          </div>
+          <div class="chart-card full-width">
+            <div class="chart-title">Transfer Size per Request (Top 20 by Size)</div>
+            <div class="chart-wrap"><canvas id="chart-size"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-timeline">
+        <div class="timeline-ctrl-bar">
+          <div class="timeline-ctrl-left">
+            <span class="ctrl-label">Bucket / Unit Time:</span>
+            <div class="unit-pill-group" id="unit-time-pills">
+              <button class="unit-pill" data-unit="auto" onclick="setTimelineUnit('auto')">Auto</button>
+              <button class="unit-pill" data-unit="100ms" onclick="setTimelineUnit('100ms')">100 ms</button>
+              <button class="unit-pill" data-unit="500ms" onclick="setTimelineUnit('500ms')">500 ms</button>
+              <button class="unit-pill" data-unit="1s" onclick="setTimelineUnit('1s')">1 s</button>
+              <button class="unit-pill" data-unit="5s" onclick="setTimelineUnit('5s')">5 s</button>
+              <button class="unit-pill" data-unit="10s" onclick="setTimelineUnit('10s')">10 s</button>
+              <button class="unit-pill" data-unit="30s" onclick="setTimelineUnit('30s')">30 s</button>
+              <button class="unit-pill" data-unit="1m" onclick="setTimelineUnit('1m')">1 min</button>
+            </div>
+          </div>
+          <div class="timeline-ctrl-right">
+            <span class="timeline-stat-tag">Active Interval: <strong id="timeline-active-interval">—</strong></span>
+            <span class="timeline-stat-tag">Peak Rate: <strong id="timeline-peak-rate">—</strong></span>
+            <span class="timeline-stat-tag">Total Span: <strong id="timeline-total-span">—</strong></span>
+          </div>
+        </div>
+
+        <div id="charts-grid">
+          <div class="chart-card full-width">
+            <div class="chart-title" id="rate-chart-title">Requests Rate per Unit Time (Throughput by Status)</div>
+            <div class="chart-wrap tall"><canvas id="chart-requests-rate"></canvas></div>
+          </div>
+
+          <div class="chart-card full-width">
+            <div class="chart-title">Request Scatter Timeline — Start Time Offset vs Duration</div>
+            <div class="chart-wrap tall"><canvas id="chart-timeline"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-domain-rates">
+        <div class="timeline-ctrl-bar">
+          <div class="timeline-ctrl-left">
+            <span class="ctrl-label">Time Unit:</span>
+            <div class="unit-pill-group" id="domain-unit-time-pills">
+              <button class="unit-pill active" data-unit="sec" onclick="setDomainRateUnit('sec')">per Second (req/s)</button>
+              <button class="unit-pill" data-unit="min" onclick="setDomainRateUnit('min')">per Minute (req/min)</button>
+            </div>
+          </div>
+          <div class="timeline-ctrl-right">
+            <span class="timeline-stat-tag">Unique Domains: <strong id="domain-rates-count">—</strong></span>
+            <span class="timeline-stat-tag">Recording Span: <strong id="domain-rates-span">—</strong></span>
+            <span class="timeline-stat-tag">Top Rate: <strong id="domain-rates-top">—</strong></span>
+          </div>
+        </div>
+
+        <div id="charts-grid">
+          <div class="chart-card full-width">
+            <div class="chart-title" id="chart-domain-rate-title">API Request Rate by Domain (Average req/s over recording)</div>
+            <div class="chart-wrap tall"><canvas id="chart-domain-rate"></canvas></div>
+          </div>
+        </div>
+
+        <div class="domain-rates-table-wrap">
+          <table class="domain-rates-table">
+            <thead>
+              <tr>
+                <th>Domain / Host</th>
+                <th>Total Requests</th>
+                <th>% of Traffic</th>
+                <th id="th-domain-rate">Avg Rate (req/s)</th>
+                <th>Peak Burst Rate (in 1s)</th>
+                <th>Active Window</th>
+                <th>Avg Latency</th>
+                <th>Total Transfer</th>
+                <th>Errors</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="domain-rates-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-table">
+        <div id="table-toolbar">
+          <span style="font-size:.82rem;font-weight:600;">All Requests</span>
+          <div class="col-picker-wrap">
+            <button class="btn btn-sm" id="col-picker-btn" onclick="toggleColumnPicker(event)">
+              <span>⚙ Columns</span> <span style="font-size:.7rem;">▾</span>
+            </button>
+            <div class="col-picker-dropdown" id="col-picker-dropdown" style="display:none;" onclick="event.stopPropagation()">
+              <div class="col-picker-title">Display Columns</div>
+              <div id="col-picker-list"></div>
+              <div class="col-picker-actions">
+                <button class="filter-action-btn" onclick="setAllColumns(true)">Select All</button>
+                <button class="filter-action-btn" onclick="resetColumnsDefault()">Reset</button>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-sm" onclick="openExportModal()" title="Export stats, timings, and URLs">
+            <span>📥 Export</span>
+          </button>
+          <span class="result-count" id="result-count"></span>
+        </div>
+        <div id="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-col="index" style="width:50px"># <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="domain" style="width:170px">Domain <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="path" style="width:280px">Path <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="method" style="width:85px">Method <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="type" style="width:80px">Type <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="status" style="width:75px">Status <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="time" style="width:95px">Duration <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="size" style="width:85px">Size <span class="sort-icon">↕</span><span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+                <th data-col="waterfall" style="width:140px">Waterfall<span class="col-resizer" title="Drag to resize (double-click to reset)"></span></th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+          <div id="table-empty" class="empty-state" style="display:none">
+            <span class="icon">🔍</span>
+            <p>No requests match the current filters.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="detail-drawer">
+  <div id="detail-header">
+    <h2 id="detail-title">Request Detail</h2>
+    <button id="detail-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div id="detail-body"></div>
+</div>
+
+<!-- ─── Export Modal ─────────────────────────────────────────── -->
+<div id="export-modal" class="modal-backdrop" style="display:none;" onclick="if(event.target===this) closeExportModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title">📥 Export HAR Stats & Timings</h2>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="modal-section-title">Quick Presets</div>
+        <div class="preset-chips">
+          <button class="preset-btn active" id="preset-url-timings" onclick="applyExportPreset('url-timings')">⚡ URLs & Timings</button>
+          <button class="preset-btn" id="preset-stats-only" onclick="applyExportPreset('stats-only')">📊 Stats Only (No Records)</button>
+          <button class="preset-btn" id="preset-summary" onclick="applyExportPreset('summary')">📈 Summary & Averages</button>
+          <button class="preset-btn" id="preset-timings-only" onclick="applyExportPreset('timings-only')">⏱ Timings Only</button>
+          <button class="preset-btn" id="preset-all" onclick="applyExportPreset('all')">📋 All Fields</button>
+        </div>
+      </div>
+
+      <div class="export-options-grid">
+        <div class="option-card">
+          <div class="modal-section-title">Export Content</div>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="export-content-mode" value="all" checked onchange="onExportContentModeChange()" /> Requests &amp; Stats
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="export-content-mode" value="stats-only" onchange="onExportContentModeChange()" /> Stats Only
+            </label>
+          </div>
+        </div>
+        <div class="option-card">
+          <div class="modal-section-title">Export Format</div>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="export-format" value="csv" checked /> CSV (.csv)
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="export-format" value="json" /> JSON (.json)
+            </label>
+          </div>
+        </div>
+        <div class="option-card">
+          <div class="modal-section-title">Data Scope</div>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="export-scope" value="filtered" checked /> Filtered (<span id="export-scope-filtered-count">0</span>)
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="export-scope" value="all" /> All (<span id="export-scope-all-count">0</span>)
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="export-fields-section">
+        <div class="filter-header-row" style="margin-bottom:6px;">
+          <div class="modal-section-title" style="margin-bottom:0;">Select Data Fields</div>
+          <div style="display:flex;gap:10px;">
+            <button class="filter-action-btn" onclick="toggleAllExportFields(true)">Select All</button>
+            <button class="filter-action-btn" onclick="toggleAllExportFields(false)">Deselect All</button>
+          </div>
+        </div>
+        <div class="fields-group" id="export-fields-container"></div>
+      </div>
+
+      <div id="export-summary-option-box" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;">
+        <label class="field-checkbox-label" style="font-weight:600;">
+          <input type="checkbox" id="export-include-summary" checked />
+          <span>Include Overall Stats Aggregate (Total, Avg latency, Errors, Transfer volume, Slowest)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="copy-success" id="export-copy-msg">✓ Copied to clipboard!</span>
+      <button class="btn" onclick="copyExportData()">📋 Copy to Clipboard</button>
+      <button class="btn btn-primary" onclick="downloadExportData()">⬇ Download File</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── STATE ─────────────────────────────────────────────────── */
+let allEntries = [];
+let filteredEntries = [];
+let charts = {};
+let sortState = { col: 'index', dir: 1 };
+let activeFilters = {
+  search: '',
+  domains: new Set(),
+  methods: new Set(),
+  types: new Set(),
+  statuses: new Set(),
+  durMin: null, durMax: null,
+  sizeMin: null, sizeMax: null,
+};
+let availableDomains = [];
+let availableMethods = [], availableTypes = [], availableStatuses = [];
+let domainSearchTerm = '';
+let selectedRowIndex = null;
+
+const COLUMN_DEFS = [
+  { key: 'index',     label: '#',         width: 50,  minWidth: 40 },
+  { key: 'domain',    label: 'Domain',    width: 170, minWidth: 80 },
+  { key: 'path',      label: 'Path',      width: 280, minWidth: 100 },
+  { key: 'method',    label: 'Method',    width: 85,  minWidth: 60 },
+  { key: 'type',      label: 'Type',      width: 80,  minWidth: 60 },
+  { key: 'status',    label: 'Status',    width: 75,  minWidth: 60 },
+  { key: 'time',      label: 'Duration',  width: 95,  minWidth: 70 },
+  { key: 'size',      label: 'Size',      width: 85,  minWidth: 65 },
+  { key: 'waterfall', label: 'Waterfall', width: 140, minWidth: 80 }
+];
+
+function initColumnResizers() {
+  document.querySelectorAll('th .col-resizer').forEach(resizer => {
+    resizer.addEventListener('click', e => e.stopPropagation());
+    resizer.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const th = resizer.parentElement;
+      const colDef = COLUMN_DEFS.find(c => c.key === th.dataset.col);
+      if (colDef) {
+        th.style.width = colDef.width + 'px';
+      }
+    });
+    resizer.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const th = resizer.parentElement;
+      const colDef = COLUMN_DEFS.find(c => c.key === th.dataset.col) || {};
+      const minWidth = colDef.minWidth || 40;
+      const startX = e.pageX;
+      const startWidth = th.getBoundingClientRect().width;
+
+      resizer.classList.add('resizing');
+      document.body.classList.add('col-resizing');
+
+      function onMouseMove(moveEvent) {
+        const diff = moveEvent.pageX - startX;
+        const newWidth = Math.max(minWidth, Math.round(startWidth + diff));
+        th.style.width = newWidth + 'px';
+      }
+
+      function onMouseUp() {
+        resizer.classList.remove('resizing');
+        document.body.classList.remove('col-resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  });
+}
+
+let columnVisibility = {
+  index: true,
+  domain: true,
+  path: true,
+  method: true,
+  type: true,
+  status: true,
+  time: true,
+  size: true,
+  waterfall: true
+};
+
+function initColumnPicker() {
+  const listEl = document.getElementById('col-picker-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  COLUMN_DEFS.forEach(col => {
+    const label = document.createElement('label');
+    label.className = 'col-checkbox-label';
+    label.innerHTML = `
+      <input type="checkbox" data-col-key="${col.key}" ${columnVisibility[col.key] ? 'checked' : ''} />
+      <span>${col.label}</span>
+    `;
+    label.querySelector('input').addEventListener('change', e => {
+      columnVisibility[col.key] = e.target.checked;
+      updateColumnStyles();
+    });
+    listEl.appendChild(label);
+  });
+  updateColumnStyles();
+}
+
+function updateColumnStyles() {
+  let css = '';
+  COLUMN_DEFS.forEach(col => {
+    if (!columnVisibility[col.key]) {
+      css += `[data-col="${col.key}"] { display: none !important; }\n`;
+    }
+  });
+  let styleEl = document.getElementById('col-visibility-style');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'col-visibility-style';
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = css;
+}
+
+function toggleColumnPicker(e) {
+  if (e) e.stopPropagation();
+  const dropdown = document.getElementById('col-picker-dropdown');
+  const isHidden = dropdown.style.display === 'none';
+  dropdown.style.display = isHidden ? 'flex' : 'none';
+}
+
+function setAllColumns(visible) {
+  COLUMN_DEFS.forEach(col => {
+    columnVisibility[col.key] = visible;
+  });
+  document.querySelectorAll('#col-picker-list input[type="checkbox"]').forEach(cb => {
+    cb.checked = visible;
+  });
+  updateColumnStyles();
+}
+
+function resetColumnsDefault() {
+  COLUMN_DEFS.forEach(col => {
+    columnVisibility[col.key] = true;
+  });
+  document.querySelectorAll('#col-picker-list input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+  });
+  updateColumnStyles();
+}
+
+document.addEventListener('click', e => {
+  const dropdown = document.getElementById('col-picker-dropdown');
+  const btn = document.getElementById('col-picker-btn');
+  if (dropdown && dropdown.style.display !== 'none' && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+    dropdown.style.display = 'none';
+  }
+});
+
+function selectAndOpenRow(index, trEl) {
+  selectedRowIndex = index;
+  document.querySelectorAll('tbody tr.selected-row').forEach(r => r.classList.remove('selected-row'));
+  if (trEl) trEl.classList.add('selected-row');
+  openDetail(index);
+}
+
+function handleRowKeyDown(event, index, trEl) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectAndOpenRow(index, trEl);
+  }
+}
+
+/* ── EXPORT DATA & STATS ───────────────────────────────────── */
+const EXPORT_FIELD_GROUPS = [
+  {
+    category: 'URLs & Identifiers',
+    fields: [
+      { key: 'index', label: '# (Index)', get: e => e.index },
+      { key: 'url', label: 'Full URL', get: e => e.url },
+      { key: 'domain', label: 'Domain', get: e => e.domain },
+      { key: 'path', label: 'Path & Query', get: e => e.path },
+      { key: 'method', label: 'HTTP Method', get: e => e.method },
+      { key: 'type', label: 'Resource Type', get: e => e.type },
+      { key: 'status', label: 'Status Code', get: e => e.status },
+      { key: 'started', label: 'Start Time (ISO)', get: e => new Date(e.started).toISOString() },
+    ]
+  },
+  {
+    category: 'Timings (ms) — Network Phases',
+    fields: [
+      { key: 'time', label: 'Total Duration (ms)', get: e => +e.time.toFixed(2) },
+      { key: 'blocked', label: 'Blocked (ms)', get: e => +e.timings.blocked.toFixed(2) },
+      { key: 'dns', label: 'DNS (ms)', get: e => +e.timings.dns.toFixed(2) },
+      { key: 'connect', label: 'Connect (ms)', get: e => +e.timings.connect.toFixed(2) },
+      { key: 'ssl', label: 'SSL (ms)', get: e => +e.timings.ssl.toFixed(2) },
+      { key: 'send', label: 'Send (ms)', get: e => +e.timings.send.toFixed(2) },
+      { key: 'wait', label: 'Wait / TTFB (ms)', get: e => +e.timings.wait.toFixed(2) },
+      { key: 'receive', label: 'Receive (ms)', get: e => +e.timings.receive.toFixed(2) },
+    ]
+  },
+  {
+    category: 'Payload Sizes',
+    fields: [
+      { key: 'size', label: 'Transfer Size (bytes)', get: e => e.size },
+      { key: 'bodySize', label: 'Body Size (bytes)', get: e => (e.raw?.response?.bodySize > 0 ? e.raw.response.bodySize : 0) },
+      { key: 'headersSize', label: 'Headers Size (bytes)', get: e => (e.raw?.response?.headersSize > 0 ? e.raw.response.headersSize : 0) },
+    ]
+  }
+];
+
+const EXPORT_PRESETS = {
+  'url-timings': {
+    contentMode: 'all',
+    fields: ['index', 'domain', 'path', 'method', 'status', 'time', 'blocked', 'dns', 'connect', 'ssl', 'send', 'wait', 'receive'],
+    includeSummary: true
+  },
+  'stats-only': {
+    contentMode: 'stats-only',
+    fields: [],
+    includeSummary: true
+  },
+  'summary': {
+    contentMode: 'all',
+    fields: ['index', 'domain', 'method', 'type', 'status', 'time', 'size'],
+    includeSummary: true
+  },
+  'timings-only': {
+    contentMode: 'all',
+    fields: ['url', 'domain', 'time', 'blocked', 'dns', 'connect', 'ssl', 'send', 'wait', 'receive'],
+    includeSummary: true
+  },
+  'all': {
+    contentMode: 'all',
+    fields: ['index', 'url', 'domain', 'path', 'method', 'type', 'status', 'started', 'time', 'blocked', 'dns', 'connect', 'ssl', 'send', 'wait', 'receive', 'size', 'bodySize', 'headersSize'],
+    includeSummary: true
+  }
+};
+
+let exportFieldsInitialized = false;
+
+function initExportFields() {
+  if (exportFieldsInitialized) return;
+  const container = document.getElementById('export-fields-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  EXPORT_FIELD_GROUPS.forEach(group => {
+    const groupDiv = document.createElement('div');
+    groupDiv.innerHTML = `
+      <div class="fields-category-title">${group.category}</div>
+      <div class="fields-grid">
+        ${group.fields.map(f => `
+          <label class="field-checkbox-label">
+            <input type="checkbox" data-export-key="${f.key}" checked />
+            <span>${f.label}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+    container.appendChild(groupDiv);
+  });
+  exportFieldsInitialized = true;
+}
+
+function onExportContentModeChange() {
+  const modeEl = document.querySelector('input[name="export-content-mode"]:checked');
+  const mode = modeEl ? modeEl.value : 'all';
+  const fieldsSection = document.getElementById('export-fields-section');
+  const summaryBox = document.getElementById('export-summary-option-box');
+
+  if (mode === 'stats-only') {
+    if (fieldsSection) fieldsSection.style.display = 'none';
+    if (summaryBox) summaryBox.style.display = 'none';
+  } else {
+    if (fieldsSection) fieldsSection.style.display = '';
+    if (summaryBox) summaryBox.style.display = '';
+  }
+}
+
+function openExportModal() {
+  initExportFields();
+  document.getElementById('export-scope-filtered-count').textContent = filteredEntries.length;
+  document.getElementById('export-scope-all-count').textContent = allEntries.length;
+  applyExportPreset('url-timings');
+  document.getElementById('export-modal').style.display = 'flex';
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').style.display = 'none';
+  const copyMsg = document.getElementById('export-copy-msg');
+  if (copyMsg) copyMsg.style.display = 'none';
+}
+
+function applyExportPreset(presetKey) {
+  document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+  const btn = document.getElementById(`preset-${presetKey}`);
+  if (btn) btn.classList.add('active');
+
+  const preset = EXPORT_PRESETS[presetKey];
+  if (!preset) return;
+
+  const modeRadio = document.querySelector(`input[name="export-content-mode"][value="${preset.contentMode || 'all'}"]`);
+  if (modeRadio) {
+    modeRadio.checked = true;
+    onExportContentModeChange();
+  }
+
+  const keySet = new Set(preset.fields);
+  document.querySelectorAll('#export-fields-container input[data-export-key]').forEach(cb => {
+    cb.checked = keySet.has(cb.dataset.exportKey);
+  });
+
+  const sumCb = document.getElementById('export-include-summary');
+  if (sumCb) sumCb.checked = preset.includeSummary;
+}
+
+function toggleAllExportFields(checked) {
+  document.querySelectorAll('#export-fields-container input[data-export-key]').forEach(cb => {
+    cb.checked = checked;
+  });
+  document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+}
+
+function getSelectedExportFields() {
+  const selectedKeys = new Set();
+  document.querySelectorAll('#export-fields-container input[data-export-key]:checked').forEach(cb => {
+    selectedKeys.add(cb.dataset.exportKey);
+  });
+  const allFields = EXPORT_FIELD_GROUPS.flatMap(g => g.fields);
+  return allFields.filter(f => selectedKeys.has(f.key));
+}
+
+function buildExportData() {
+  const formatEl = document.querySelector('input[name="export-format"]:checked');
+  const format = formatEl ? formatEl.value : 'csv';
+
+  const scopeEl = document.querySelector('input[name="export-scope"]:checked');
+  const scope = scopeEl ? scopeEl.value : 'filtered';
+  const entries = (scope === 'all') ? allEntries : filteredEntries;
+
+  const contentModeEl = document.querySelector('input[name="export-content-mode"]:checked');
+  const isStatsOnly = contentModeEl && contentModeEl.value === 'stats-only';
+
+  const selectedFields = getSelectedExportFields();
+  const includeSummary = document.getElementById('export-include-summary')?.checked ?? true;
+
+  if (!isStatsOnly && selectedFields.length === 0) {
+    alert('Please select at least one field to export, or choose "Stats Only".');
+    return null;
+  }
+
+  // Calculate comprehensive statistics
+  const count = entries.length;
+  const avgMs = count ? entries.reduce((a, e) => a + e.time, 0) / count : 0;
+  const totalSize = entries.reduce((a, e) => a + e.size, 0);
+  const errors = entries.filter(e => e.status >= 400 || e.status === 0).length;
+  const slowestMs = count ? Math.max(...entries.map(e => e.time)) : 0;
+  const fastestMs = count ? Math.min(...entries.map(e => e.time)) : 0;
+
+  // Recording time span (earliest request start to latest request completion)
+  const minStart = count ? Math.min(...entries.map(e => e.started)) : 0;
+  const maxEnd = count ? Math.max(...entries.map(e => e.started + (e.time > 0 ? e.time : 0))) : 0;
+  const recordingDurationMs = count ? Math.max(0, maxEnd - minStart) : 0;
+  const recordingStartedIso = minStart ? new Date(minStart).toISOString() : '';
+  const recordingEndedIso = maxEnd ? new Date(maxEnd).toISOString() : '';
+  const recordingDurationFmt = fmtDuration(recordingDurationMs);
+
+  // Breakdown by Status Code Class
+  const statusDist = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, '0': 0 };
+  entries.forEach(e => {
+    const sc = statusClass(e.status);
+    statusDist[sc] = (statusDist[sc] || 0) + 1;
+  });
+
+  // Breakdown by HTTP Method
+  const methodDist = {};
+  entries.forEach(e => {
+    methodDist[e.method] = (methodDist[e.method] || 0) + 1;
+  });
+
+  // Breakdown by Resource Type
+  const typeDist = {};
+  entries.forEach(e => {
+    typeDist[e.type] = (typeDist[e.type] || 0) + 1;
+  });
+
+  // Top Domains by volume & latency
+  const domainDist = {};
+  entries.forEach(e => {
+    if (!domainDist[e.domain]) {
+      domainDist[e.domain] = { count: 0, totalMs: 0, totalBytes: 0, errorCount: 0 };
+    }
+    domainDist[e.domain].count++;
+    domainDist[e.domain].totalMs += e.time;
+    domainDist[e.domain].totalBytes += e.size;
+    if (e.status >= 400 || e.status === 0) domainDist[e.domain].errorCount++;
+  });
+  const spanSec = Math.max(0.001, recordingDurationMs / 1000);
+  const spanMin = Math.max(0.001 / 60, spanSec / 60);
+
+  const domainSummary = Object.entries(domainDist)
+    .map(([domain, d]) => ({
+      domain,
+      requests: d.count,
+      rateReqPerSec: +(d.count / spanSec).toFixed(2),
+      rateReqPerMin: +(d.count / spanMin).toFixed(2),
+      avgDurationMs: +(d.totalMs / d.count).toFixed(2),
+      totalBytes: d.totalBytes,
+      errors: d.errorCount
+    }))
+    .sort((a, b) => b.requests - a.requests);
+
+  // Timing Phase Averages (ms)
+  const avgPhases = {
+    blocked: count ? +(entries.reduce((a, e) => a + (e.timings?.blocked || 0), 0) / count).toFixed(2) : 0,
+    dns:     count ? +(entries.reduce((a, e) => a + (e.timings?.dns || 0), 0) / count).toFixed(2) : 0,
+    connect: count ? +(entries.reduce((a, e) => a + (e.timings?.connect || 0), 0) / count).toFixed(2) : 0,
+    ssl:     count ? +(entries.reduce((a, e) => a + (e.timings?.ssl || 0), 0) / count).toFixed(2) : 0,
+    send:    count ? +(entries.reduce((a, e) => a + (e.timings?.send || 0), 0) / count).toFixed(2) : 0,
+    wait:    count ? +(entries.reduce((a, e) => a + (e.timings?.wait || 0), 0) / count).toFixed(2) : 0,
+    receive: count ? +(entries.reduce((a, e) => a + (e.timings?.receive || 0), 0) / count).toFixed(2) : 0,
+  };
+
+  if (isStatsOnly) {
+    if (format === 'json') {
+      const statsObj = {
+        exportedAt: new Date().toISOString(),
+        dataScope: scope,
+        overallMetrics: {
+          totalRequests: count,
+          recordingDurationMs,
+          recordingDurationFormatted: recordingDurationFmt,
+          recordingStarted: recordingStartedIso,
+          recordingEnded: recordingEndedIso,
+          avgDurationMs: +avgMs.toFixed(2),
+          fastestDurationMs: count ? +fastestMs.toFixed(2) : 0,
+          slowestDurationMs: count ? +slowestMs.toFixed(2) : 0,
+          totalTransferBytes: totalSize,
+          totalTransferKB: +(totalSize / 1024).toFixed(2),
+          errorCount: errors,
+          errorRatePct: count ? +((errors / count) * 100).toFixed(2) : 0
+        },
+        avgTimingPhasesMs: avgPhases,
+        statusDistribution: statusDist,
+        methodsDistribution: methodDist,
+        resourceTypeDistribution: typeDist,
+        domains: domainSummary
+      };
+      return {
+        content: JSON.stringify(statsObj, null, 2),
+        format,
+        filename: `har-stats-summary-${scope}-${new Date().toISOString().slice(0, 10)}.json`,
+        mime: 'application/json'
+      };
+    } else {
+      // CSV format for stats only
+      const lines = [];
+      lines.push(`# HAR Analyzer - Comprehensive Stats Export`);
+      lines.push(`# Exported: ${new Date().toISOString()} | Scope: ${scope}`);
+      lines.push('');
+      lines.push(`"Metric","Value"`);
+      lines.push(`"Total Requests",${count}`);
+      lines.push(`"Recording Duration",${recordingDurationFmt}`);
+      lines.push(`"Recording Duration (ms)",${recordingDurationMs}`);
+      lines.push(`"Recording Start Time",${recordingStartedIso}`);
+      lines.push(`"Recording End Time",${recordingEndedIso}`);
+      lines.push(`"Average Latency (ms)",${avgMs.toFixed(2)}`);
+      lines.push(`"Fastest Latency (ms)",${fastestMs.toFixed(2)}`);
+      lines.push(`"Slowest Latency (ms)",${slowestMs.toFixed(2)}`);
+      lines.push(`"Total Transfer (bytes)",${totalSize}`);
+      lines.push(`"Total Transfer (KB)",${(totalSize / 1024).toFixed(2)}`);
+      lines.push(`"Error Count (4xx/5xx/0)",${errors}`);
+      lines.push(`"Error Rate (%)",${count ? ((errors / count) * 100).toFixed(2) : 0}%`);
+      lines.push('');
+      lines.push(`"Average Timing Phase","Latency (ms)"`);
+      lines.push(`"Blocked / Queued",${avgPhases.blocked}`);
+      lines.push(`"DNS Resolution",${avgPhases.dns}`);
+      lines.push(`"Connect",${avgPhases.connect}`);
+      lines.push(`"SSL / TLS Handshake",${avgPhases.ssl}`);
+      lines.push(`"Send",${avgPhases.send}`);
+      lines.push(`"Wait / TTFB",${avgPhases.wait}`);
+      lines.push(`"Receive",${avgPhases.receive}`);
+      lines.push('');
+      lines.push(`"Status Class","Count"`);
+      Object.entries(statusDist).forEach(([k, v]) => lines.push(`"${k}",${v}`));
+      lines.push('');
+      lines.push(`"Resource Type","Count"`);
+      Object.entries(typeDist).forEach(([k, v]) => lines.push(`"${k}",${v}`));
+      lines.push('');
+      lines.push(`"Domain","Requests","Rate (req/s)","Rate (req/min)","Avg Duration (ms)","Total Bytes","Errors"`);
+      domainSummary.forEach(d => {
+        lines.push(`"${d.domain.replace(/"/g, '""')}",${d.requests},${d.rateReqPerSec},${d.rateReqPerMin},${d.avgDurationMs},${d.totalBytes},${d.errors}`);
+      });
+
+      return {
+        content: lines.join('\r\n'),
+        format,
+        filename: `har-stats-summary-${scope}-${new Date().toISOString().slice(0, 10)}.csv`,
+        mime: 'text/csv;charset=utf-8;'
+      };
+    }
+  }
+
+  // Standard request records export (+ optional aggregate)
+  if (format === 'json') {
+    const result = {};
+    if (includeSummary) {
+      result.summary = {
+        exportedAt: new Date().toISOString(),
+        totalRequests: count,
+        recordingDurationMs,
+        recordingDurationFormatted: recordingDurationFmt,
+        recordingStarted: recordingStartedIso,
+        recordingEnded: recordingEndedIso,
+        avgDurationMs: +avgMs.toFixed(2),
+        totalTransferBytes: totalSize,
+        errorCount: errors,
+        slowestDurationMs: slowestMs
+      };
+    }
+    result.requests = entries.map(e => {
+      const row = {};
+      selectedFields.forEach(f => {
+        row[f.key] = f.get(e);
+      });
+      return row;
+    });
+    return { content: JSON.stringify(result, null, 2), format, filename: `har-stats-${scope}-${new Date().toISOString().slice(0, 10)}.json`, mime: 'application/json' };
+  } else {
+    const lines = [];
+    if (includeSummary) {
+      lines.push(`# HAR Analyzer Export - Date: ${new Date().toISOString()}`);
+      lines.push(`# Requests: ${count} | Recording Span: ${recordingDurationFmt} (${recordingDurationMs}ms) | Avg Latency: ${avgMs.toFixed(2)}ms | Errors: ${errors} | Total Transfer: ${totalSize} bytes`);
+      lines.push(`# Recording Window: ${recordingStartedIso} to ${recordingEndedIso}`);
+      lines.push('');
+    }
+    lines.push(selectedFields.map(f => `"${f.label.replace(/"/g, '""')}"`).join(','));
+    entries.forEach(e => {
+      const row = selectedFields.map(f => {
+        const val = f.get(e);
+        if (typeof val === 'string') {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val ?? '';
+      });
+      lines.push(row.join(','));
+    });
+    return { content: lines.join('\r\n'), format, filename: `har-stats-${scope}-${new Date().toISOString().slice(0, 10)}.csv`, mime: 'text/csv;charset=utf-8;' };
+  }
+}
+
+function downloadExportData() {
+  const exportResult = buildExportData();
+  if (!exportResult) return;
+  const blob = new Blob([exportResult.content], { type: exportResult.mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = exportResult.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function copyExportData() {
+  const exportResult = buildExportData();
+  if (!exportResult) return;
+  navigator.clipboard.writeText(exportResult.content).then(() => {
+    const copyMsg = document.getElementById('export-copy-msg');
+    if (copyMsg) {
+      copyMsg.style.display = 'inline';
+      setTimeout(() => { copyMsg.style.display = 'none'; }, 2500);
+    }
+  }).catch(err => {
+    alert('Failed to copy to clipboard: ' + err);
+  });
+}
+
+/* ── FILE LOADING ──────────────────────────────────────────── */
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0]; if (file) loadFile(file);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { const har = JSON.parse(e.target.result); processHAR(har, file.name); }
+    catch (err) { alert('Invalid HAR file: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function processHAR(har, filename) {
+  allEntries = (har.log?.entries || []).map((entry, i) => {
+    const req = entry.request || {}, res = entry.response || {}, t = entry.timings || {};
+    const started = new Date(entry.startedDateTime).getTime();
+    const size = res._transferSize > 0 ? res._transferSize : (res.bodySize > 0 ? res.bodySize : 0);
+    let domain = 'unknown';
+    let path = '';
+    try {
+      if (req.url) {
+        const u = new URL(req.url);
+        domain = u.hostname || 'unknown';
+        path = u.pathname + u.search;
+      }
+    } catch {
+      domain = 'unknown';
+      path = req.url || '';
+    }
+    return {
+      index: i + 1,
+      url: req.url || '',
+      domain,
+      path,
+      method: req.method || 'GET',
+      type: entry._resourceType || 'other',
+      status: res.status || 0,
+      time: entry.time || 0,
+      size,
+      started,
+      timings: {
+        blocked: Math.max(0, t.blocked || 0),
+        dns:     Math.max(0, t.dns     || 0),
+        ssl:     Math.max(0, t.ssl     || 0),
+        connect: Math.max(0, t.connect || 0),
+        send:    Math.max(0, t.send    || 0),
+        wait:    Math.max(0, t.wait    || 0),
+        receive: Math.max(0, t.receive || 0),
+      },
+      raw: entry,
+    };
+  });
+
+  const domainCounts = {};
+  allEntries.forEach(e => {
+    domainCounts[e.domain] = (domainCounts[e.domain] || 0) + 1;
+  });
+  availableDomains = Object.entries(domainCounts)
+    .map(([domain, count]) => ({ domain, count }))
+    .sort((a, b) => b.count - a.count);
+
+  availableMethods  = [...new Set(allEntries.map(e => e.method))].sort();
+  availableTypes    = [...new Set(allEntries.map(e => e.type))].sort();
+  availableStatuses = [...new Set(allEntries.map(e => statusClass(e.status)))].sort();
+
+  document.getElementById('landing-header').style.display = 'none';
+  document.getElementById('drop-zone').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  document.getElementById('file-badge').textContent = filename;
+
+  buildDomainList();
+  buildChips();
+  initColumnPicker();
+  initColumnResizers();
+  applyFilters();
+}
+
+function resetApp() {
+  allEntries = []; filteredEntries = [];
+  Object.values(charts).forEach(c => c.destroy()); charts = {};
+  document.getElementById('landing-header').style.display = '';
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('file-badge').textContent = '';
+  const recEl = document.getElementById('stat-recording-time');
+  if (recEl) { recEl.textContent = '—'; recEl.title = ''; }
+  const intEl = document.getElementById('timeline-active-interval');
+  if (intEl) intEl.textContent = '—';
+  const peakEl = document.getElementById('timeline-peak-rate');
+  if (peakEl) peakEl.textContent = '—';
+  const spanEl = document.getElementById('timeline-total-span');
+  if (spanEl) spanEl.textContent = '—';
+  selectedTimelineUnit = 'auto';
+  document.querySelectorAll('#unit-time-pills .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.unit === 'auto');
+  });
+  selectedDomainRateUnit = 'sec';
+  document.querySelectorAll('#domain-unit-time-pills .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.unit === 'sec');
+  });
+  const drCount = document.getElementById('domain-rates-count');
+  if (drCount) drCount.textContent = '—';
+  const drSpan = document.getElementById('domain-rates-span');
+  if (drSpan) drSpan.textContent = '—';
+  const drTop = document.getElementById('domain-rates-top');
+  if (drTop) drTop.textContent = '—';
+  const drTbody = document.getElementById('domain-rates-tbody');
+  if (drTbody) drTbody.innerHTML = '';
+  closeExportModal();
+  fileInput.value = ''; resetFilters(false);
+}
+
+/* ── STATUS HELPERS ────────────────────────────────────────── */
+function statusClass(s) {
+  if (s === 0) return '0'; if (s < 300) return '2xx'; if (s < 400) return '3xx'; if (s < 500) return '4xx'; return '5xx';
+}
+function statusBadgeClass(s) {
+  if (s === 0) return 's-0'; if (s < 300) return 's-2'; if (s < 400) return 's-3'; if (s < 500) return 's-4'; return 's-5';
+}
+function statusChipClass(sc) {
+  return { '2xx':'s2xx','3xx':'s3xx','4xx':'s4xx','5xx':'s5xx','0':'s0xx' }[sc] || '';
+}
+
+/* ── DOMAIN FILTER LIST ────────────────────────────────────── */
+function buildDomainList() {
+  const container = document.getElementById('chips-domain');
+  if (!container) return;
+  container.innerHTML = '';
+  const term = domainSearchTerm.toLowerCase();
+  const visibleDomains = availableDomains.filter(d => !term || d.domain.toLowerCase().includes(term));
+  
+  if (visibleDomains.length === 0) {
+    container.innerHTML = '<div style="font-size:0.72rem;color:var(--muted);padding:6px 2px;">No matching domains</div>';
+    return;
+  }
+
+  visibleDomains.forEach(item => {
+    const el = document.createElement('div');
+    const isActive = activeFilters.domains.has(item.domain);
+    el.className = 'domain-item' + (isActive ? ' active' : '');
+    el.innerHTML = `
+      <span class="domain-name" title="${escHtml(item.domain)}">${escHtml(item.domain)}</span>
+      <span class="domain-count">${item.count}</span>
+    `;
+    el.addEventListener('click', () => {
+      if (activeFilters.domains.has(item.domain)) {
+        activeFilters.domains.delete(item.domain);
+      } else {
+        activeFilters.domains.add(item.domain);
+      }
+      buildDomainList();
+      applyFilters();
+    });
+    container.appendChild(el);
+  });
+}
+
+function clearDomainFilters(e) {
+  if (e) e.stopPropagation();
+  activeFilters.domains.clear();
+  buildDomainList();
+  applyFilters();
+}
+
+function filterByDomain(domain) {
+  activeFilters.domains.clear();
+  activeFilters.domains.add(domain);
+  // Switch to table or update sidebar
+  buildDomainList();
+  applyFilters();
+}
+
+/* ── CHIPS ─────────────────────────────────────────────────── */
+function buildChips() {
+  buildChipGroup('chips-method', availableMethods, 'methods', () => '');
+  buildChipGroup('chips-type', availableTypes, 'types', () => '');
+  buildChipGroup('chips-status', availableStatuses, 'statuses', sc => statusChipClass(sc));
+}
+function buildChipGroup(containerId, values, filterKey, classNameFn) {
+  const el = document.getElementById(containerId); el.innerHTML = '';
+  values.forEach(v => {
+    const chip = document.createElement('div');
+    chip.className = 'chip ' + classNameFn(v);
+    chip.textContent = v; chip.dataset.value = v;
+    chip.addEventListener('click', () => {
+      const set = activeFilters[filterKey];
+      if (set.has(v)) { set.delete(v); chip.classList.remove('active'); }
+      else { set.add(v); chip.classList.add('active'); }
+      applyFilters();
+    });
+    el.appendChild(chip);
+  });
+}
+
+function resetFilters(reapply = true) {
+  activeFilters = {
+    search: '',
+    domains: new Set(),
+    methods: new Set(),
+    types: new Set(),
+    statuses: new Set(),
+    durMin: null, durMax: null,
+    sizeMin: null, sizeMax: null
+  };
+  domainSearchTerm = '';
+  ['filter-search','filter-domain-search','filter-dur-min','filter-dur-max','filter-size-min','filter-size-max'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.querySelectorAll('.chip.active, .domain-item.active').forEach(c => c.classList.remove('active'));
+  buildDomainList();
+  if (reapply) applyFilters();
+}
+
+/* Filter input events */
+document.getElementById('filter-search').addEventListener('input', e => { activeFilters.search = e.target.value.trim().toLowerCase(); applyFilters(); });
+document.getElementById('filter-domain-search').addEventListener('input', e => { domainSearchTerm = e.target.value.trim(); buildDomainList(); });
+document.getElementById('filter-dur-min').addEventListener('input', e => { activeFilters.durMin = e.target.value !== '' ? +e.target.value : null; applyFilters(); });
+document.getElementById('filter-dur-max').addEventListener('input', e => { activeFilters.durMax = e.target.value !== '' ? +e.target.value : null; applyFilters(); });
+document.getElementById('filter-size-min').addEventListener('input', e => { activeFilters.sizeMin = e.target.value !== '' ? +e.target.value * 1024 : null; applyFilters(); });
+document.getElementById('filter-size-max').addEventListener('input', e => { activeFilters.sizeMax = e.target.value !== '' ? +e.target.value * 1024 : null; applyFilters(); });
+
+/* ── FILTERING ─────────────────────────────────────────────── */
+function applyFilters() {
+  const { search, domains, methods, types, statuses, durMin, durMax, sizeMin, sizeMax } = activeFilters;
+  filteredEntries = allEntries.filter(e => {
+    if (search && !e.url.toLowerCase().includes(search)) return false;
+    if (domains.size && !domains.has(e.domain)) return false;
+    if (methods.size && !methods.has(e.method)) return false;
+    if (types.size && !types.has(e.type)) return false;
+    if (statuses.size && !statuses.has(statusClass(e.status))) return false;
+    if (durMin !== null && e.time < durMin) return false;
+    if (durMax !== null && e.time > durMax) return false;
+    if (sizeMin !== null && e.size < sizeMin) return false;
+    if (sizeMax !== null && e.size > sizeMax) return false;
+    return true;
+  });
+  updateSummary(); renderTable(); renderCharts();
+}
+
+/* ── SUMMARY ───────────────────────────────────────────────── */
+function fmtMs(ms) { if (ms < 1000) return ms.toFixed(0) + ' ms'; return (ms/1000).toFixed(2) + ' s'; }
+function fmtDuration(ms) {
+  if (!ms || ms <= 0) return '0 ms';
+  if (ms < 1000) return Math.round(ms) + ' ms';
+  if (ms < 60000) return (ms / 1000).toFixed(2) + ' s';
+  const mins = Math.floor(ms / 60000);
+  const secs = ((ms % 60000) / 1000).toFixed(1);
+  return `${mins}m ${secs}s`;
+}
+function fmtBytes(b) { if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(2) + ' MB'; }
+
+function updateSummary() {
+  const fe = filteredEntries;
+  document.getElementById('stat-total').textContent = allEntries.length;
+  document.getElementById('stat-shown').textContent = fe.length;
+  const recEl = document.getElementById('stat-recording-time');
+  if (!fe.length) {
+    if (recEl) { recEl.textContent = '—'; recEl.title = ''; }
+    ['stat-avg','stat-size','stat-errors','stat-slowest'].forEach(id => document.getElementById(id).textContent = '—');
+    return;
+  }
+  const minStart = Math.min(...fe.map(e => e.started));
+  const maxEnd = Math.max(...fe.map(e => e.started + (e.time > 0 ? e.time : 0)));
+  const recordingSpanMs = Math.max(0, maxEnd - minStart);
+  if (recEl) {
+    recEl.textContent = fmtDuration(recordingSpanMs);
+    recEl.title = `Start: ${new Date(minStart).toLocaleTimeString()} (${new Date(minStart).toISOString()})\nEnd: ${new Date(maxEnd).toLocaleTimeString()} (${new Date(maxEnd).toISOString()})\nTotal Span: ${recordingSpanMs.toLocaleString()} ms`;
+  }
+  const avgMs = fe.reduce((a, e) => a + e.time, 0) / fe.length;
+  const totalSize = fe.reduce((a, e) => a + e.size, 0);
+  const errors = fe.filter(e => e.status >= 400 || e.status === 0).length;
+  const errPct = ((errors / fe.length) * 100).toFixed(1);
+  const slowest = Math.max(...fe.map(e => e.time));
+  document.getElementById('stat-avg').textContent = fmtMs(avgMs);
+  document.getElementById('stat-avg').className = 'stat-value' + (avgMs > 3000 ? ' err' : avgMs > 1000 ? ' warn' : ' ok');
+  document.getElementById('stat-size').textContent = fmtBytes(totalSize);
+  document.getElementById('stat-errors').textContent = errors + ' (' + errPct + '%)';
+  document.getElementById('stat-errors').className = 'stat-value' + (errors > 0 ? ' warn' : ' ok');
+  document.getElementById('stat-slowest').textContent = fmtMs(slowest);
+  document.getElementById('stat-slowest').className = 'stat-value' + (slowest > 5000 ? ' err' : slowest > 2000 ? ' warn' : ' ok');
+}
+
+/* ── TABLE ─────────────────────────────────────────────────── */
+function renderTable() {
+  const sorted = sortEntries([...filteredEntries]);
+  const tbody = document.getElementById('table-body');
+  const empty = document.getElementById('table-empty');
+  const count = document.getElementById('result-count');
+  count.textContent = sorted.length + ' of ' + allEntries.length + ' requests';
+  if (!sorted.length) { tbody.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = sorted.map(e => {
+    const durClass = e.time > 3000 ? 'slow' : e.time > 1000 ? 'med' : 'fast';
+    const wf = buildWaterfallHTML(e.timings);
+    const isSelected = selectedRowIndex === (e.index - 1);
+    return `<tr tabindex="0" data-idx="${e.index - 1}" class="${isSelected ? 'selected-row' : ''}" onclick="selectAndOpenRow(${e.index - 1}, this)" onkeydown="handleRowKeyDown(event, ${e.index - 1}, this)">
+      <td data-col="index" style="color:var(--muted);width:40px">${e.index}</td>
+      <td data-col="domain">
+        <div class="domain-cell">
+          <span class="host-pill" title="Click to filter by domain: ${escHtml(e.domain)}" onclick="event.stopPropagation(); filterByDomain('${escHtml(e.domain)}')">🌐 ${escHtml(e.domain)}</span>
+        </div>
+      </td>
+      <td data-col="path">
+        <div class="path-cell" title="${escHtml(e.url)}">
+          ${escHtml(e.path)}
+        </div>
+      </td>
+      <td data-col="method"><span class="method-badge m-${e.method}">${e.method}</span></td>
+      <td data-col="type"><span class="type-badge">${e.type}</span></td>
+      <td data-col="status"><span class="status-badge ${statusBadgeClass(e.status)}">${e.status || 'ERR'}</span></td>
+      <td data-col="time"><span class="duration-val ${durClass}">${fmtMs(e.time)}</span></td>
+      <td data-col="size" style="font-family:monospace;font-size:.78rem">${e.size > 0 ? fmtBytes(e.size) : '—'}</td>
+      <td data-col="waterfall">${wf}</td>
+    </tr>`;
+  }).join('');
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.col === sortState.col);
+    const icon = th.querySelector('.sort-icon');
+    if (icon) icon.textContent = th.dataset.col === sortState.col ? (sortState.dir === 1 ? '↑' : '↓') : '↕';
+  });
+}
+
+function buildWaterfallHTML(t) {
+  const total = t.blocked + t.dns + t.connect + t.ssl + t.send + t.wait + t.receive;
+  if (total <= 0) return '<div class="waterfall"></div>';
+  const pct = v => ((v / total) * 100).toFixed(1) + '%';
+  return `<div class="waterfall" title="blocked:${t.blocked.toFixed(0)}ms | dns:${t.dns.toFixed(0)}ms | connect:${t.connect.toFixed(0)}ms | ssl:${t.ssl.toFixed(0)}ms | send:${t.send.toFixed(0)}ms | wait:${t.wait.toFixed(0)}ms | receive:${t.receive.toFixed(0)}ms">
+    <div class="wf-seg wf-blocked" style="width:${pct(t.blocked)}"></div>
+    <div class="wf-seg wf-dns"     style="width:${pct(t.dns)}"></div>
+    <div class="wf-seg wf-connect" style="width:${pct(t.connect)}"></div>
+    <div class="wf-seg wf-ssl"     style="width:${pct(t.ssl)}"></div>
+    <div class="wf-seg wf-send"    style="width:${pct(t.send)}"></div>
+    <div class="wf-seg wf-wait"    style="width:${pct(t.wait)}"></div>
+    <div class="wf-seg wf-receive" style="width:${pct(t.receive)}"></div>
+  </div>`;
+}
+
+/* Sorting */
+document.querySelectorAll('th[data-col]').forEach(th => {
+  th.addEventListener('click', (e) => {
+    if (e.target.closest('.col-resizer')) return;
+    const col = th.dataset.col;
+    if (sortState.col === col) sortState.dir *= -1; else { sortState.col = col; sortState.dir = 1; }
+    renderTable();
+  });
+});
+
+function sortEntries(arr) {
+  const { col, dir } = sortState;
+  return arr.sort((a, b) => {
+    let av = a[col] ?? '', bv = b[col] ?? '';
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+}
+
+/* Tabs */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    const panel = document.getElementById('tab-' + tab.dataset.tab);
+    if (panel) panel.classList.add('active');
+    if (tab.dataset.tab === 'timeline') {
+      renderTimelineCharts();
+    } else if (tab.dataset.tab === 'domain-rates') {
+      renderDomainRatesTab();
+    } else if (tab.dataset.tab === 'charts') {
+      renderOverviewCharts();
+    }
+  });
+});
+
+/* ── TIMELINE UNIT SETTINGS ─────────────────────────────────── */
+let selectedTimelineUnit = 'auto'; // 'auto', '100ms', '500ms', '1s', '5s', '10s', '30s', '1m'
+const UNIT_MS_MAP = {
+  '100ms': 100,
+  '500ms': 500,
+  '1s':    1000,
+  '5s':    5000,
+  '10s':   10000,
+  '30s':   30000,
+  '1m':    60000,
+};
+
+function setTimelineUnit(unit) {
+  selectedTimelineUnit = unit;
+  document.querySelectorAll('#unit-time-pills .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.unit === unit);
+  });
+  renderTimelineCharts();
+}
+
+function resolveTimelineBucketMs(recordingSpanMs) {
+  if (selectedTimelineUnit !== 'auto' && UNIT_MS_MAP[selectedTimelineUnit]) {
+    return UNIT_MS_MAP[selectedTimelineUnit];
+  }
+  // Auto bucket selection based on total recording span
+  if (recordingSpanMs <= 2000) return 100;
+  if (recordingSpanMs <= 10000) return 500;
+  if (recordingSpanMs <= 60000) return 1000;
+  if (recordingSpanMs <= 300000) return 5000;
+  if (recordingSpanMs <= 900000) return 10000;
+  if (recordingSpanMs <= 3600000) return 30000;
+  return 60000;
+}
+
+function fmtBucketLabel(bucketIndex, bucketMs, minStart) {
+  const offsetMs = bucketIndex * bucketMs;
+  let offsetStr = '';
+  if (bucketMs < 1000) {
+    offsetStr = `${offsetMs}ms`;
+  } else if (bucketMs < 60000) {
+    offsetStr = `${(offsetMs / 1000).toFixed(0)}s`;
+  } else {
+    offsetStr = `${Math.floor(offsetMs / 60000)}m ${(offsetMs % 60000) / 1000}s`;
+  }
+  return offsetStr;
+}
+
+/* ── CHARTS ────────────────────────────────────────────────── */
+const P = { blue:'#6c8fff', purple:'#a78bfa', green:'#34d399', yellow:'#fbbf24', orange:'#fb923c', red:'#f87171', cyan:'#22d3ee', pink:'#f472b6', teal:'#2dd4bf', indigo:'#818cf8' };
+const COLORS = Object.values(P);
+const TT_BASE = { backgroundColor:'#232738', borderColor:'#2e3347', borderWidth:1, titleColor:'#e2e8f0', bodyColor:'#8892a4' };
+const GRID = { color: '#1e2235' };
+const TICK = { color: '#8892a4' };
+
+function makeChart(id, type, data, opts = {}) {
+  if (charts[id]) charts[id].destroy();
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el.getContext('2d'), { type, data, options: opts });
+}
+
+function renderOverviewCharts() {
+  renderStatusChart();
+  renderTypeChart();
+  renderDomainChart();
+  renderSlowestChart();
+  renderTimingChart();
+  renderSizeChart();
+}
+
+function renderCharts() {
+  renderOverviewCharts();
+  renderTimelineCharts();
+  renderDomainRatesTab();
+}
+
+function renderStatusChart() {
+  const counts = {};
+  filteredEntries.forEach(e => { const sc = statusClass(e.status); counts[sc] = (counts[sc]||0)+1; });
+  const labels = Object.keys(counts);
+  const colorMap = { '2xx':P.green, '3xx':P.yellow, '4xx':P.orange, '5xx':P.red, '0':'#475569' };
+  makeChart('chart-status','doughnut',{
+    labels,
+    datasets:[{ data:labels.map(l=>counts[l]), backgroundColor:labels.map(l=>colorMap[l]||P.blue), borderWidth:2, borderColor:'#1a1d27', hoverOffset:8 }],
+  },{
+    cutout:'65%', responsive:true,
+    plugins:{ legend:{ position:'right', labels:{ color:'#8892a4', padding:14, font:{size:12} } }, tooltip:{ ...TT_BASE,
+      callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.parsed} (${((ctx.parsed/filteredEntries.length)*100).toFixed(1)}%)` } } },
+    scales:{ x:{display:false}, y:{display:false} },
+  });
+}
+
+function renderTypeChart() {
+  const counts = {};
+  filteredEntries.forEach(e => { counts[e.type]=(counts[e.type]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  makeChart('chart-type','bar',{
+    labels: sorted.map(([k])=>k),
+    datasets:[{ label:'Count', data:sorted.map(([,v])=>v), backgroundColor:sorted.map((_,i)=>COLORS[i%COLORS.length]+'cc'), borderRadius:4, borderSkipped:false }],
+  },{
+    responsive:true,
+    plugins:{ legend:{display:false}, tooltip:TT_BASE },
+    scales:{ x:{ ticks:TICK, grid:GRID }, y:{ ticks:{...TICK,precision:0}, grid:GRID } },
+  });
+}
+
+function renderDomainChart() {
+  const counts = {};
+  filteredEntries.forEach(e => { counts[e.domain] = (counts[e.domain] || 0) + 1; });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  makeChart('chart-domain', 'bar', {
+    labels: sorted.map(([k]) => k.length > 25 ? k.slice(0, 22) + '…' : k),
+    datasets: [{
+      label: 'Requests',
+      data: sorted.map(([, v]) => v),
+      backgroundColor: sorted.map((_, i) => COLORS[(i + 2) % COLORS.length] + 'cc'),
+      borderRadius: 4
+    }]
+  }, {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        ...TT_BASE,
+        callbacks: {
+          title: items => sorted[items[0].dataIndex][0],
+          label: ctx => ` Requests: ${ctx.parsed.x}`
+        }
+      }
+    },
+    scales: {
+      x: { ticks: { ...TICK, precision: 0 }, grid: GRID },
+      y: { ticks: { ...TICK, font: { size: 10 } }, grid: GRID }
+    }
+  });
+}
+
+function renderTimelineCharts() {
+  renderRequestsRateChart();
+  renderTimelineScatterChart();
+}
+
+function renderRequestsRateChart() {
+  if (!filteredEntries.length) {
+    if (charts['chart-requests-rate']) charts['chart-requests-rate'].destroy();
+    document.getElementById('timeline-active-interval').textContent = '—';
+    document.getElementById('timeline-peak-rate').textContent = '—';
+    document.getElementById('timeline-total-span').textContent = '—';
+    return;
+  }
+
+  const minStart = Math.min(...filteredEntries.map(e => e.started));
+  const maxEnd = Math.max(...filteredEntries.map(e => e.started + (e.time > 0 ? e.time : 0)));
+  const totalSpanMs = Math.max(1, maxEnd - minStart);
+
+  const bucketMs = resolveTimelineBucketMs(totalSpanMs);
+  const numBuckets = Math.max(1, Math.ceil(totalSpanMs / bucketMs) + 1);
+
+  // Status classes: 2xx, 3xx, 4xx, 5xx, 0
+  const statusClasses = ['2xx', '3xx', '4xx', '5xx', '0'];
+  const statusColors = {
+    '2xx': P.green,
+    '3xx': P.yellow,
+    '4xx': P.orange,
+    '5xx': P.red,
+    '0':   '#475569'
+  };
+
+  const bucketCounts = {};
+  statusClasses.forEach(sc => {
+    bucketCounts[sc] = new Array(numBuckets).fill(0);
+  });
+
+  filteredEntries.forEach(e => {
+    const sc = statusClass(e.status);
+    const bIdx = Math.min(numBuckets - 1, Math.max(0, Math.floor((e.started - minStart) / bucketMs)));
+    if (bucketCounts[sc]) {
+      bucketCounts[sc][bIdx]++;
+    }
+  });
+
+  const labels = [];
+  let maxRequestsInBucket = 0;
+  for (let i = 0; i < numBuckets; i++) {
+    labels.push(fmtBucketLabel(i, bucketMs, minStart));
+    const totalInBucket = statusClasses.reduce((sum, sc) => sum + bucketCounts[sc][i], 0);
+    if (totalInBucket > maxRequestsInBucket) {
+      maxRequestsInBucket = totalInBucket;
+    }
+  }
+
+  const unitName = bucketMs < 1000 ? `${bucketMs}ms` : (bucketMs < 60000 ? `${bucketMs / 1000}s` : `${bucketMs / 60000}m`);
+  const activeUnitBtn = document.querySelector('#unit-time-pills .unit-pill[data-unit="' + selectedTimelineUnit + '"]');
+  document.querySelectorAll('#unit-time-pills .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.unit === selectedTimelineUnit);
+  });
+
+  const intEl = document.getElementById('timeline-active-interval');
+  const peakEl = document.getElementById('timeline-peak-rate');
+  const spanEl = document.getElementById('timeline-total-span');
+  if (intEl) intEl.textContent = `${unitName} (per bucket)`;
+  if (peakEl) peakEl.textContent = `${maxRequestsInBucket} reqs / ${unitName}`;
+  if (spanEl) spanEl.textContent = fmtDuration(totalSpanMs);
+
+  const titleEl = document.getElementById('rate-chart-title');
+  if (titleEl) {
+    titleEl.textContent = `Requests Rate per Unit Time (${unitName} intervals) — Throughput by Status`;
+  }
+
+  const datasets = statusClasses.map(sc => ({
+    label: sc,
+    data: bucketCounts[sc],
+    backgroundColor: (statusColors[sc] || P.blue) + 'dd',
+    borderColor: statusColors[sc] || P.blue,
+    borderWidth: 1,
+    borderRadius: 2,
+    stack: 'requests'
+  })).filter(ds => ds.data.some(count => count > 0));
+
+  makeChart('chart-requests-rate', 'bar', {
+    labels,
+    datasets
+  }, {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: { color: '#8892a4', font: { size: 11 }, boxWidth: 12, padding: 14 }
+      },
+      tooltip: {
+        ...TT_BASE,
+        callbacks: {
+          title: items => {
+            const idx = items[0].dataIndex;
+            const startOffset = idx * bucketMs;
+            const endOffset = (idx + 1) * bucketMs;
+            const startClock = new Date(minStart + startOffset).toLocaleTimeString();
+            return `Window: +${(startOffset/1000).toFixed(1)}s to +${(endOffset/1000).toFixed(1)}s (${startClock})`;
+          },
+          footer: items => {
+            const sum = items.reduce((a, b) => a + b.parsed.y, 0);
+            return `Total In Window: ${sum} requests`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        title: { display: true, text: `Timeline Offset (${unitName} bins)`, color: '#8892a4' },
+        ticks: { ...TICK, maxRotation: 45, autoSkip: true, maxTicksLimit: 25 },
+        grid: GRID
+      },
+      y: {
+        stacked: true,
+        title: { display: true, text: 'Requests Count', color: '#8892a4' },
+        ticks: { ...TICK, precision: 0 },
+        grid: GRID
+      }
+    }
+  });
+}
+
+function renderTimelineScatterChart() {
+  if (!filteredEntries.length) { if(charts['chart-timeline']) charts['chart-timeline'].destroy(); return; }
+  const minT = Math.min(...filteredEntries.map(e=>e.started));
+  const colorMap = { '2xx':P.green, '3xx':P.yellow, '4xx':P.orange, '5xx':P.red, '0':'#475569' };
+  const groups = {};
+  filteredEntries.forEach(e => {
+    const sc = statusClass(e.status);
+    if (!groups[sc]) groups[sc]=[];
+    groups[sc].push({ x:(e.started-minT)/1000, y:e.time, url:e.url, status:e.status, domain:e.domain });
+  });
+  makeChart('chart-timeline','scatter',{
+    datasets: Object.entries(groups).map(([sc,pts]) => ({
+      label:sc, data:pts,
+      backgroundColor:(colorMap[sc]||P.blue)+'aa', borderColor:colorMap[sc]||P.blue,
+      borderWidth:1, pointRadius:5, pointHoverRadius:7,
+    })),
+  },{
+    responsive:true,
+    plugins:{ legend:{ labels:{color:'#8892a4',font:{size:11}} }, tooltip:{ ...TT_BASE,
+      callbacks:{ label: ctx => {
+        const d = ctx.raw;
+        const path = (() => { try { return new URL(d.url).pathname.slice(0,50); } catch { return d.url.slice(0,50); } })();
+        return [`Status: ${d.status}`, `Domain: ${d.domain}`, `Duration: ${fmtMs(d.y)}`, `Offset: +${d.x.toFixed(2)}s`, path];
+      } } } },
+    scales:{
+      x:{ title:{display:true,text:'Start Time Offset (seconds from recording start)',color:'#8892a4'}, ticks:TICK, grid:GRID },
+      y:{ title:{display:true,text:'Request Duration (ms)',color:'#8892a4'}, ticks:TICK, grid:GRID },
+    },
+  });
+}
+
+function renderSlowestChart() {
+  const top = [...filteredEntries].sort((a,b)=>b.time-a.time).slice(0,15);
+  const labels = top.map(e => { try { return new URL(e.url).pathname.slice(0,40); } catch { return e.url.slice(0,40); } });
+  makeChart('chart-slowest','bar',{
+    labels,
+    datasets:[{ label:'Duration (ms)', data:top.map(e=>+e.time.toFixed(0)),
+      backgroundColor:top.map(e => e.time>5000?P.red+'cc':e.time>2000?P.orange+'cc':e.time>1000?P.yellow+'cc':P.green+'cc'),
+      borderRadius:3 }],
+  },{
+    indexAxis:'y', responsive:true,
+    plugins:{ legend:{display:false}, tooltip:{ ...TT_BASE, callbacks:{label:ctx=>fmtMs(ctx.parsed.x)} } },
+    scales:{ x:{ ticks:{...TICK,callback:v=>fmtMs(v)}, grid:GRID }, y:{ ticks:{...TICK,font:{size:10}}, grid:GRID } },
+  });
+}
+
+function renderTimingChart() {
+  const top = [...filteredEntries].sort((a,b)=>b.time-a.time).slice(0,15);
+  const labels = top.map(e => { try { return new URL(e.url).pathname.slice(0,35); } catch { return e.url.slice(0,35); } });
+  const segs = [
+    {key:'blocked',label:'Blocked',color:'#64748b'},
+    {key:'dns',    label:'DNS',    color:P.purple},
+    {key:'connect',label:'Connect',color:P.cyan},
+    {key:'ssl',    label:'SSL',    color:'#38bdf8'},
+    {key:'send',   label:'Send',   color:P.green},
+    {key:'wait',   label:'Wait',   color:P.yellow},
+    {key:'receive',label:'Receive',color:P.red},
+  ];
+  makeChart('chart-timing','bar',{
+    labels,
+    datasets: segs.map(s => ({ label:s.label, data:top.map(e=>+e.timings[s.key].toFixed(2)), backgroundColor:s.color+'cc', borderRadius:0 })),
+  },{
+    indexAxis:'y', responsive:true,
+    plugins:{ legend:{ labels:{color:'#8892a4',font:{size:10},boxWidth:12} }, tooltip:{ ...TT_BASE, callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmtMs(ctx.parsed.x)}`} } },
+    scales:{
+      x:{ stacked:true, ticks:{...TICK,callback:v=>fmtMs(v)}, grid:GRID },
+      y:{ stacked:true, ticks:{...TICK,font:{size:10}}, grid:GRID },
+    },
+  });
+}
+
+function renderSizeChart() {
+  const top = [...filteredEntries].filter(e=>e.size>0).sort((a,b)=>b.size-a.size).slice(0,20);
+  const labels = top.map(e => { try { return new URL(e.url).pathname.slice(0,40); } catch { return e.url.slice(0,40); } });
+  const typeColorMap = { fetch:P.blue, xhr:P.purple, script:P.orange, image:P.green, font:P.cyan, preflight:'#475569' };
+  makeChart('chart-size','bar',{
+    labels,
+    datasets:[{ label:'Transfer Size', data:top.map(e=>+(e.size/1024).toFixed(2)),
+      backgroundColor:top.map(e=>(typeColorMap[e.type]||P.blue)+'cc'), borderRadius:4 }],
+  },{
+    responsive:true,
+    plugins:{ legend:{display:false}, tooltip:{ ...TT_BASE, callbacks:{label:ctx=>fmtBytes(ctx.parsed.y*1024)} } },
+    scales:{ x:{ ticks:{...TICK,font:{size:10},maxRotation:40}, grid:GRID }, y:{ ticks:{...TICK,callback:v=>v+' KB'}, grid:GRID } },
+  });
+}
+
+/* ── DOMAIN RATE ANALYSIS ──────────────────────────────────── */
+let selectedDomainRateUnit = 'sec'; // 'sec' (req/s) or 'min' (req/min)
+
+function setDomainRateUnit(unit) {
+  selectedDomainRateUnit = unit;
+  document.querySelectorAll('#domain-unit-time-pills .unit-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.unit === unit);
+  });
+  renderDomainRatesTab();
+}
+
+function renderDomainRatesTab() {
+  const countEl = document.getElementById('domain-rates-count');
+  const spanEl = document.getElementById('domain-rates-span');
+  const topEl = document.getElementById('domain-rates-top');
+  const tbody = document.getElementById('domain-rates-tbody');
+  const titleEl = document.getElementById('chart-domain-rate-title');
+  const thRate = document.getElementById('th-domain-rate');
+
+  if (!tbody) return;
+
+  if (!filteredEntries.length) {
+    if (charts['chart-domain-rate']) charts['chart-domain-rate'].destroy();
+    if (countEl) countEl.textContent = '0';
+    if (spanEl) spanEl.textContent = '—';
+    if (topEl) topEl.textContent = '—';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px;">No requests match active filters</td></tr>';
+    return;
+  }
+
+  const minStart = Math.min(...filteredEntries.map(e => e.started));
+  const maxEnd = Math.max(...filteredEntries.map(e => e.started + (e.time > 0 ? e.time : 0)));
+  const totalSpanMs = Math.max(1, maxEnd - minStart);
+  const totalSpanSec = Math.max(0.001, totalSpanMs / 1000);
+  const totalSpanMin = Math.max(0.001 / 60, totalSpanSec / 60);
+
+  if (spanEl) spanEl.textContent = fmtDuration(totalSpanMs);
+
+  // Group requests by domain
+  const domainsMap = {};
+  filteredEntries.forEach(e => {
+    const d = e.domain || 'unknown';
+    if (!domainsMap[d]) {
+      domainsMap[d] = {
+        domain: d,
+        requests: 0,
+        totalTime: 0,
+        totalBytes: 0,
+        errors: 0,
+        firstStart: e.started,
+        lastEnd: e.started + (e.time > 0 ? e.time : 0),
+        startTimes: []
+      };
+    }
+    const rec = domainsMap[d];
+    rec.requests++;
+    rec.totalTime += e.time;
+    rec.totalBytes += e.size;
+    if (e.status >= 400 || e.status === 0) rec.errors++;
+    if (e.started < rec.firstStart) rec.firstStart = e.started;
+    const reqEnd = e.started + (e.time > 0 ? e.time : 0);
+    if (reqEnd > rec.lastEnd) rec.lastEnd = reqEnd;
+    rec.startTimes.push(e.started);
+  });
+
+  const isSec = selectedDomainRateUnit === 'sec';
+  if (thRate) thRate.textContent = isSec ? 'Avg Rate (req/s)' : 'Avg Rate (req/min)';
+  if (titleEl) {
+    titleEl.textContent = isSec
+      ? 'API Request Rate by Domain (Average Requests per Second over recording)'
+      : 'API Request Rate by Domain (Average Requests per Minute over recording)';
+  }
+
+  // Calculate rate, peak burst in 1s, active span
+  const domainList = Object.values(domainsMap).map(d => {
+    const rateSec = d.requests / totalSpanSec;
+    const rateMin = d.requests / totalSpanMin;
+    const activeSpanMs = Math.max(0, d.lastEnd - d.firstStart);
+
+    // Calculate peak 1-second burst rate using sliding window
+    d.startTimes.sort((a, b) => a - b);
+    let peakBurst = 1;
+    let left = 0;
+    for (let right = 0; right < d.startTimes.length; right++) {
+      while (d.startTimes[right] - d.startTimes[left] > 1000) {
+        left++;
+      }
+      const windowCount = right - left + 1;
+      if (windowCount > peakBurst) peakBurst = windowCount;
+    }
+
+    return {
+      domain: d.domain,
+      requests: d.requests,
+      rateSec: +rateSec.toFixed(2),
+      rateMin: +rateMin.toFixed(2),
+      displayRate: isSec ? +rateSec.toFixed(2) : +rateMin.toFixed(2),
+      peakBurst,
+      activeSpanMs,
+      avgMs: +(d.totalTime / d.requests).toFixed(1),
+      totalBytes: d.totalBytes,
+      errors: d.errors,
+      trafficPct: +((d.requests / filteredEntries.length) * 100).toFixed(1)
+    };
+  });
+
+  // Sort descending by rate
+  domainList.sort((a, b) => b.displayRate - a.displayRate);
+
+  if (countEl) countEl.textContent = domainList.length;
+  if (topEl) {
+    const top = domainList[0];
+    topEl.textContent = top ? `${top.displayRate} ${isSec ? 'req/s' : 'req/min'} (${top.domain})` : '—';
+  }
+
+  // Render horizontal bar chart of top 15 domains by rate
+  const topForChart = domainList.slice(0, 15);
+  makeChart('chart-domain-rate', 'bar', {
+    labels: topForChart.map(d => d.domain.length > 30 ? d.domain.slice(0, 27) + '…' : d.domain),
+    datasets: [{
+      label: isSec ? 'Requests per Second' : 'Requests per Minute',
+      data: topForChart.map(d => d.displayRate),
+      backgroundColor: topForChart.map((_, i) => COLORS[i % COLORS.length] + 'dd'),
+      borderColor: topForChart.map((_, i) => COLORS[i % COLORS.length]),
+      borderWidth: 1,
+      borderRadius: 4
+    }]
+  }, {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        ...TT_BASE,
+        callbacks: {
+          title: items => topForChart[items[0].dataIndex].domain,
+          label: ctx => ` Rate: ${ctx.parsed.x} ${isSec ? 'req/s' : 'req/min'} (${topForChart[ctx.dataIndex].requests} requests)`
+        }
+      }
+    },
+    scales: {
+      x: {
+        title: { display: true, text: isSec ? 'Average Rate (req/s)' : 'Average Rate (req/min)', color: '#8892a4' },
+        ticks: { ...TICK },
+        grid: GRID
+      },
+      y: {
+        ticks: { ...TICK, font: { size: 10 } },
+        grid: GRID
+      }
+    }
+  });
+
+  // Render Table rows
+  tbody.innerHTML = domainList.map(d => {
+    let rateClass = 'low';
+    if (isSec) {
+      if (d.displayRate >= 5) rateClass = 'high';
+      else if (d.displayRate >= 1) rateClass = 'med';
+    } else {
+      if (d.displayRate >= 100) rateClass = 'high';
+      else if (d.displayRate >= 20) rateClass = 'med';
+    }
+
+    return `
+      <tr>
+        <td>
+          <span class="host-pill" title="Click to filter by ${escHtml(d.domain)}" onclick="filterByDomain('${escHtml(d.domain)}')">
+            🌐 ${escHtml(d.domain)}
+          </span>
+        </td>
+        <td><strong>${d.requests}</strong></td>
+        <td><span style="color:var(--muted);">${d.trafficPct}%</span></td>
+        <td><span class="rate-badge ${rateClass}">${d.displayRate} ${isSec ? 'req/s' : 'req/min'}</span></td>
+        <td><span style="font-family:monospace;font-weight:600;">${d.peakBurst} req / 1s</span></td>
+        <td style="color:var(--muted);">${fmtDuration(d.activeSpanMs)}</td>
+        <td><span style="font-family:monospace;">${fmtMs(d.avgMs)}</span></td>
+        <td style="font-family:monospace;">${fmtBytes(d.totalBytes)}</td>
+        <td>${d.errors > 0 ? `<span style="color:var(--red);font-weight:700;">${d.errors}</span>` : '<span style="color:var(--green);">0</span>'}</td>
+        <td>
+          <button class="btn btn-sm" style="padding:2px 8px;font-size:.7rem;" onclick="filterByDomain('${escHtml(d.domain)}')">
+            Filter Host
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+/* ── DETAIL DRAWER ─────────────────────────────────────────── */
+function openDetail(index) {
+  const e = allEntries[index]; if (!e) return;
+  selectedRowIndex = index;
+  document.querySelectorAll('tbody tr').forEach(r => {
+    r.classList.toggle('selected-row', +r.dataset.idx === index);
+  });
+  const req = e.raw.request, res = e.raw.response;
+  document.getElementById('detail-title').textContent = (() => { try { return new URL(e.url).pathname; } catch { return e.url; } })();
+  const timingItems = [
+    {label:'Blocked',key:'blocked',color:'#64748b'},{label:'DNS',key:'dns',color:P.purple},
+    {label:'Connect',key:'connect',color:P.cyan},{label:'SSL',key:'ssl',color:'#38bdf8'},
+    {label:'Send',key:'send',color:P.green},{label:'Wait',key:'wait',color:P.yellow},
+    {label:'Receive',key:'receive',color:P.red},
+  ];
+  const totalTiming = Object.values(e.timings).reduce((a,b)=>a+b,0);
+  document.getElementById('detail-body').innerHTML = `
+    <div>
+      <div class="detail-section-title">Request</div>
+      <div class="detail-kv">
+        <div class="dk">Domain</div>
+        <div class="dv">
+          <a href="#" style="color:var(--accent);text-decoration:none;" onclick="filterByDomain('${escHtml(e.domain)}');closeDetail();return false;">
+            🌐 ${escHtml(e.domain)} <span>(Filter)</span>
+          </a>
+        </div>
+        <div class="dk">URL</div><div class="dv" style="word-break:break-all">${escHtml(e.url)}</div>
+        <div class="dk">Method</div><div class="dv"><span class="method-badge m-${e.method}">${e.method}</span></div>
+        <div class="dk">HTTP Version</div><div class="dv">${escHtml(req.httpVersion||'—')}</div>
+        <div class="dk">Started</div><div class="dv">${new Date(e.raw.startedDateTime).toLocaleString()}</div>
+      </div>
+    </div>
+    <div>
+      <div class="detail-section-title">Response</div>
+      <div class="detail-kv">
+        <div class="dk">Status</div><div class="dv"><span class="status-badge ${statusBadgeClass(e.status)}">${e.status} ${escHtml(res.statusText||'')}</span></div>
+        <div class="dk">Transfer Size</div><div class="dv">${e.size>0?fmtBytes(e.size):'—'}</div>
+        <div class="dk">Body Size</div><div class="dv">${res.bodySize>0?fmtBytes(res.bodySize):'—'}</div>
+        <div class="dk">Total Time</div><div class="dv">${fmtMs(e.time)}</div>
+      </div>
+    </div>
+    <div>
+      <div class="detail-section-title">Timing Breakdown</div>
+      <div class="timing-breakdown">
+        ${timingItems.map(t => {
+          const val = e.timings[t.key], pct = totalTiming>0?(val/totalTiming)*100:0;
+          return `<div class="timing-row"><span class="timing-label">${t.label}</span><div class="timing-bar-wrap"><div class="timing-bar" style="width:${pct.toFixed(1)}%;background:${t.color}"></div></div><span class="timing-ms">${fmtMs(val)}</span></div>`;
+        }).join('')}
+      </div>
+    </div>
+    <div>
+      <div class="detail-section-title">Request Headers (${req.headers?.length||0})</div>
+      <div class="headers-list">${(req.headers||[]).map(h=>`<div class="header-row"><span class="hk">${escHtml(h.name)}</span><span class="hv">${escHtml(h.value)}</span></div>`).join('')}</div>
+    </div>
+    <div>
+      <div class="detail-section-title">Response Headers (${res.headers?.length||0})</div>
+      <div class="headers-list">${(res.headers||[]).map(h=>`<div class="header-row"><span class="hk">${escHtml(h.name)}</span><span class="hv">${escHtml(h.value)}</span></div>`).join('')}</div>
+    </div>
+    ${req.queryString?.length?`<div>
+      <div class="detail-section-title">Query Params (${req.queryString.length})</div>
+      <div class="headers-list">${req.queryString.map(q=>`<div class="header-row"><span class="hk">${escHtml(q.name)}</span><span class="hv">${escHtml(q.value)}</span></div>`).join('')}</div>
+    </div>`:''}
+    ${req.postData?`<div>
+      <div class="detail-section-title">Request Body</div>
+      <pre style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:.75rem;color:var(--text);overflow-x:auto;white-space:pre-wrap;word-break:break-all">${escHtml(req.postData.text||JSON.stringify(req.postData,null,2))}</pre>
+    </div>`:''}
+  `;
+  document.getElementById('detail-drawer').classList.add('open');
+}
+
+function closeDetail() { document.getElementById('detail-drawer').classList.remove('open'); }
+document.addEventListener('keydown', e => { if(e.key==='Escape') { closeDetail(); closeExportModal(); } });
+function escHtml(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+initColumnPicker();
+initColumnResizers();
+</script>
+</body>
+</html>
